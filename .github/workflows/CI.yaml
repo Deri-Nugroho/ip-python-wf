@@ -90,8 +90,8 @@ jobs:
         run: |
           aws ecs create-service \
             --cluster crud-cluster \
-            --service-name crud-service \
-            --task-definition crudapp-task \
+            --service-name showip-service \
+            --task-definition showipapp-task \
             --desired-count 1 \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={
@@ -135,6 +135,6 @@ jobs:
       - name: Force new deployment
         run: |
           aws ecs update-service \
-            --cluster crud-cluster \
-            --service crud-service \
+            --cluster showip-cluster \
+            --service showip-service \
             --force-new-deployment
