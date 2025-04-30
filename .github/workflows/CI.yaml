@@ -52,7 +52,7 @@ jobs:
       - name: Register ECS Task Definition
         run: |
           aws ecs register-task-definition \
-            --family crudapp-task \
+            --family showipapp-task \
             --network-mode awsvpc \
             --execution-role-arn arn:aws:iam::636784510794:role/LabRole \
             --task-role-arn arn:aws:iam::636784510794:role/LabRole \
@@ -89,7 +89,7 @@ jobs:
       - name: Create ECS Service
         run: |
           aws ecs create-service \
-            --cluster crud-cluster \
+            --cluster showip-cluster \
             --service-name showip-service \
             --task-definition showipapp-task \
             --desired-count 1 \
