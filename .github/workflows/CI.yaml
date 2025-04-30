@@ -68,7 +68,7 @@ jobs:
               \"logConfiguration\": {
                 \"logDriver\": \"awslogs\",
                 \"options\": {
-                  \"awslogs-group\": \"/ecs/showipaapp\",
+                  \"awslogs-group\": \"/ecs/showipapp\",
                   \"awslogs-region\": \"${{ secrets.AWS_REGION }}\",
                   \"awslogs-stream-prefix\": \"ecs\"
                 }
