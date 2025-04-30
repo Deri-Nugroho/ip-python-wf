@@ -1,0 +1,140 @@
+name: Build and Upload to S3 (Flask App)
+
+on:
+  push:
+    branches: 
+      - main
+
+jobs:
+  build-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+        
+      - name: Create ZIP archive
+        run: |  
+          zip -r app.zip .ebextensions/ application.py requirements.txt
+
+      - name: Upload ZIP to S3
+        run: |
+          aws s3 cp app.zip s3://${{ secrets.S3_BUCKET_NAME }}/app.zip
+
+  ecs-setup:
+    runs-on: ubuntu-latest
+    needs: build-upload
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Create ECS Cluster
+        run: |
+          aws ecs create-cluster --cluster-name showip-cluster || echo "Cluster already exists"
+
+      - name: Create CloudWatch log group
+        run: |
+          aws logs create-log-group --log-group-name /ecs/showipapp || true
+        
+      - name: Register ECS Task Definition
+        run: |
+          aws ecs register-task-definition \
+            --family crudapp-task \
+            --network-mode awsvpc \
+            --execution-role-arn arn:aws:iam::636784510794:role/LabRole \
+            --task-role-arn arn:aws:iam::636784510794:role/LabRole \
+            --container-definitions "[{
+              \"name\": \"showipapp\",
+              \"image\": \"${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest\",
+              \"essential\": true,
+              \"portMappings\": [{
+                \"containerPort\": 5000,
+                \"hostPort\": 5000,
+                \"protocol\": \"tcp\"
+              }],
+              \"environment\": [
+                {\"name\": \"NODE_ENV\", \"value\": \"production\"},
+                {\"name\": \"DB_HOST\", \"value\": \"${{ secrets.DB_HOST }}\"},
+                {\"name\": \"DB_USER\", \"value\": \"${{ secrets.DB_USER }}\"},
+                {\"name\": \"DB_PASSWORD\", \"value\": \"${{ secrets.DB_PASSWORD }}\"},
+                {\"name\": \"DB_DATABASE\", \"value\": \"${{ secrets.DB_DATABASE }}\"}
+              ],
+              \"logConfiguration\": {
+                \"logDriver\": \"awslogs\",
+                \"options\": {
+                  \"awslogs-group\": \"/ecs/showipaapp\",
+                  \"awslogs-region\": \"${{ secrets.AWS_REGION }}\",
+                  \"awslogs-stream-prefix\": \"ecs\"
+                }
+              }
+            }]" \
+            --requires-compatibilities FARGATE \
+            --cpu "1024" \
+            --memory "3072" \
+            --runtime-platform operatingSystemFamily=LINUX
+
+      - name: Create ECS Service
+        run: |
+          aws ecs create-service \
+            --cluster crud-cluster \
+            --service-name crud-service \
+            --task-definition crudapp-task \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={
+              subnets=[${{ secrets.SUBNET_ID }}],
+              securityGroups=[${{ secrets.SECURITY_GROUP_ID }}],
+              assignPublicIp=ENABLED
+            }" || echo "Service already exists"
+
+  docker-deploy:
+    runs-on: ubuntu-latest
+    needs: ecs-setup
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.ECR_REPOSITORY }}:latest .
+
+      - name: Tag Docker image
+        run: |
+          docker tag ${{ secrets.ECR_REPOSITORY }}:latest \
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+
+      - name: Force new deployment
+        run: |
+          aws ecs update-service \
+            --cluster crud-cluster \
+            --service crud-service \
+            --force-new-deployment
