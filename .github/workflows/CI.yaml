@@ -65,13 +65,6 @@ jobs:
                 \"hostPort\": 5000,
                 \"protocol\": \"tcp\"
               }],
-              \"environment\": [
-                {\"name\": \"NODE_ENV\", \"value\": \"production\"},
-                {\"name\": \"DB_HOST\", \"value\": \"${{ secrets.DB_HOST }}\"},
-                {\"name\": \"DB_USER\", \"value\": \"${{ secrets.DB_USER }}\"},
-                {\"name\": \"DB_PASSWORD\", \"value\": \"${{ secrets.DB_PASSWORD }}\"},
-                {\"name\": \"DB_DATABASE\", \"value\": \"${{ secrets.DB_DATABASE }}\"}
-              ],
               \"logConfiguration\": {
                 \"logDriver\": \"awslogs\",
                 \"options\": {
@@ -94,11 +87,7 @@ jobs:
             --task-definition showipapp-task \
             --desired-count 1 \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={
-              subnets=[${{ secrets.SUBNET_ID }}],
-              securityGroups=[${{ secrets.SECURITY_GROUP_ID }}],
-              assignPublicIp=ENABLED
-            }" || echo "Service already exists"
+            --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.SUBNET_ID }}],securityGroups=[${{ secrets.SECURITY_GROUP_ID }}],assignPublicIp=ENABLED}" || echo "Service already exists"
 
   docker-deploy:
     runs-on: ubuntu-latest
